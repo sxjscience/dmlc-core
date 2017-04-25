@@ -1,10 +1,11 @@
 #!/usr/bin/env python
-# pylint: disable=protected-access, unused-variable, locally-disabled, redefined-variable-type
+# pylint: disable=protected-access, unused-variable, locally-disabled, len-as-condition
 """Lint helper to generate lint summary of source.
 
 Copyright by Contributors
 """
 from __future__ import print_function
+import argparse
 import codecs
 import sys
 import re
@@ -24,9 +25,9 @@ class LintHelper(object):
         """Print summary of certain result map."""
         if len(result_map) == 0:
             return 0
-        npass = len([x for k, x in result_map.iteritems() if len(x) == 0])
+        npass = len([x for k, x in result_map.items() if len(x) == 0])
         strm.write('=====%d/%d %s files passed check=====\n' % (npass, len(result_map), ftype))
-        for fname, emap in result_map.iteritems():
+        for fname, emap in result_map.items():
             if len(emap) == 0:
                 continue
             strm.write('%s: %d Errors of %d Categories map=%s\n' % (
@@ -74,7 +75,9 @@ class LintHelper(object):
         (pylint_stdout, pylint_stderr) = epylint.py_run(
             ' '.join([str(path)] + self.pylint_opts), return_std=True)
         emap = {}
-        print(pylint_stderr.read())
+        err = pylint_stderr.read()
+        if len(err):
+            print(err)
         for line in pylint_stdout:
             sys.stderr.write(line)
             key = line.split(':')[-1].split('(')[0].strip()
@@ -84,7 +87,6 @@ class LintHelper(object):
                 emap[key] = 1
             else:
                 emap[key] += 1
-        sys.stderr.write('\n')
         self.python_map[str(path)] = emap
 
     def print_summary(self, strm):
@@ -121,7 +123,7 @@ def get_header_guard_dmlc(filename):
         file_path_from_root = _HELPER.project_name +  file_path_from_root[idx + 3:]
     else:
         for spath in inc_list:
-            prefix = spath + os.sep
+            prefix = spath + '/'
             if file_path_from_root.startswith(prefix):
                 file_path_from_root = re.sub('^' + prefix, '', file_path_from_root)
                 break
@@ -142,12 +144,19 @@ def process(fname, allow_type):
 
 def main():
     """Main entry function."""
-    if len(sys.argv) < 3:
-        print('Usage: <project-name> <filetype> <list-of-path to traverse>')
-        print('\tfiletype can be python/cpp/all')
-        exit(-1)
-    _HELPER.project_name = sys.argv[1]
-    file_type = sys.argv[2]
+    parser = argparse.ArgumentParser(description="lint source codes")
+    parser.add_argument('project', help='project name')
+    parser.add_argument('filetype', choices=['python', 'cpp', 'all'],
+                        help='source code type')
+    parser.add_argument('path', nargs='+', help='path to traverse')
+    parser.add_argument('--pylint-rc', default=None,
+                        help='pylint rc file')
+    args = parser.parse_args()
+
+    _HELPER.project_name = args.project
+    if args.pylint_rc is not None:
+        _HELPER.pylint_opts = ['--rcfile='+args.pylint_rc,]
+    file_type = args.filetype
     allow_type = []
     if file_type == 'python' or file_type == 'all':
         allow_type += [x for x in PYTHON_SUFFIX]
@@ -159,7 +168,7 @@ def main():
                                                codecs.getreader('utf8'),
                                                codecs.getwriter('utf8'),
                                                'replace')
-    for path in sys.argv[3:]:
+    for path in args.path:
         if os.path.isfile(path):
             process(path, allow_type)
         else:

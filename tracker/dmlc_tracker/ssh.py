@@ -23,7 +23,7 @@ def sync_dir(local_dir, slave_node, slave_dir):
 def get_env(pass_envs):
     envs = []
     # get system envs
-    keys = ['LD_LIBRARY_PATH', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
+    keys = ['OMP_NUM_THREADS', 'KMP_AFFINITY', 'LD_LIBRARY_PATH', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
     for k in keys:
         v = os.getenv(k)
         if v is not None:
@@ -70,6 +70,10 @@ def submit(args):
         # launch jobs
         for i in range(nworker + nserver):
             pass_envs['DMLC_ROLE'] = 'server' if i < nserver else 'worker'
+            if i < nserver:
+                pass_envs['DMLC_SERVER_ID'] = i
+            else:
+                pass_envs['DMLC_WORKER_ID'] = i - nserver
             (node, port) = hosts[i % len(hosts)]
             prog = get_env(pass_envs) + ' cd ' + working_dir + '; ' + (' '.join(args.command))
             prog = 'ssh -o StrictHostKeyChecking=no ' + node + ' -p ' + port + ' \'' + prog + '\''

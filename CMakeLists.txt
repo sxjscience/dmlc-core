@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 2.8.7)
 
 project(dmlccore C CXX)
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/build/private/local_config.cmake)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/build/private/local_config.cmake)
+endif()
+
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
 include(cmake/Utils.cmake)
@@ -9,8 +13,9 @@ include(cmake/Utils.cmake)
 
 # Options
 dmlccore_option(USE_HDFS "Build with HDFS support" OFF)
-dmlccore_option(USE_S3 "Build with S3 support" OFF)
 dmlccore_option(USE_AZURE "Build with AZURE support" OFF)
+dmlccore_option(USE_S3 "Build with S3 support" OFF)
+dmlccore_option(USE_OPENMP "Build with OpenMP" ON)
 
 # include path
 include_directories("include")
@@ -34,9 +39,9 @@ if(USE_S3)
 
  find_package(OpenSSL REQUIRED)
  include_directories(SYSTEM ${OPENSSL_INCLUDE_DIR})
- list(APPEND dmlccore_LINKER_LIBS ${OPENSSL_LIBRARY})
+ list(APPEND dmlccore_LINKER_LIBS ${OPENSSL_LIBRARY} ${OPENSSL_LIBRARIES})
 
- find_package(CRYPTO REQUIRED)
+ find_package(Crypto REQUIRED)
  include_directories(SYSTEM ${CRYPTO_INCLUDE_DIR})
  list(APPEND dmlccore_LINKER_LIBS ${CRYPTO_LIBRARY})
 
@@ -50,6 +55,9 @@ if(USE_AZURE)
 else()
   add_definitions(-DDMLC_USE_AZURE=0)
 endif()
+
+# Older stdc++ enable c++11 items
+add_definitions(-D__USE_XOPEN2K8)
 
 # compile
 if(MSVC)
@@ -72,20 +80,29 @@ else(MSVC)
   endif()
   if(SUPPORT_MSSE2)
   	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse2")
-  endif() 
+  endif()
   set(CMAKE_CXX_FLAGS ${CMAKE_C_FLAGS})
 endif(MSVC)
 
-# include OpenMP flags if relevant
-FIND_PACKAGE(OpenMP)
-if(OPENMP_FOUND)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+if(USE_OPENMP)
+  if(MSVC)
+    set(OPENMP_FOUND ON)
+    set(OpenMP_C_FLAGS "-openmp")
+    set(OpenMP_CXX_FLAGS ${OpenMP_C_FLAGS})
+  else()
+    find_package(OpenMP REQUIRED)
+  endif()
+  if(OPENMP_FOUND)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+  endif()
 endif()
 
 FILE(GLOB SOURCE "src/*.cc")
+FILE(GLOB_RECURSE SOURCE_INCLUDE "include/*")
+list(APPEND SOURCE ${SOURCE_INCLUDE})
 list(APPEND SOURCE "src/io/line_split.cc")
 list(APPEND SOURCE "src/io/recordio_split.cc")
 list(APPEND SOURCE "src/io/input_split_base.cc")
@@ -101,15 +118,26 @@ if(USE_AZURE)
   list(APPEND SOURCE "src/io/azure_filesys.cc")
 endif()
 
-add_library(dmlccore ${SOURCE})
-target_link_libraries(dmlccore ${dmlccore_LINKER_LIBS})
+add_library(dmlc ${SOURCE})
+target_link_libraries(dmlc ${dmlccore_LINKER_LIBS})
+
+# ---[ Install Includes
+if(INSTALL_INCLUDE_DIR)
+  add_custom_command(TARGET dmlc POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${PROJECT_SOURCE_DIR}/include ${INSTALL_INCLUDE_DIR}/
+    )
+endif()
+
+# ---[ Install the archive static lib and header files
+install(TARGETS dmlc ARCHIVE DESTINATION lib) 
+install(DIRECTORY include DESTINATION .)
+install(DIRECTORY doc DESTINATION .)
 
 # ---[ Linter target
 if(MSVC)
-  find_package(PythonInterp 2)
-  set(PYTHON2_EXECUTABLE ${PYTHON_EXECUTABLE} CACHE FILEPATH "Path to the python 2.x executable")
-  find_package(PythonInterp 3)
-  set(PYTHON3_EXECUTABLE ${PYTHON_EXECUTABLE} CACHE FILEPATH "Path to the python 3.x executable")
+  find_package(PythonInterp)
+  set(PYTHON_EXECUTABLE ${PYTHON_EXECUTABLE} CACHE FILEPATH "Path to the python 2.x executable")
 endif()
 set(LINT_DIRS include src scripts)
-add_custom_target(dmlccore_lint COMMAND ${CMAKE_COMMAND} -DMSVC=${MSVC} -DPYTHON2_EXECUTABLE=${PYTHON2_EXECUTABLE} -DPYTHON3_EXECUTABLE=${PYTHON3_EXECUTABLE} -DPROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR} -DLINT_DIRS=${LINT_DIRS} -DPROJECT_NAME=dmlc -P ${PROJECT_SOURCE_DIR}/cmake/lint.cmake)
+add_custom_target(dmlccore_lint COMMAND ${CMAKE_COMMAND} -DMSVC=${MSVC} -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}  -DPROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR} -DLINT_DIRS=${LINT_DIRS} -DPROJECT_NAME=dmlc -P ${PROJECT_SOURCE_DIR}/cmake/lint.cmake)

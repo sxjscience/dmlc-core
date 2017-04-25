@@ -57,7 +57,7 @@ inline void InitLogging(const char* argv0) {
 #endif
 
 namespace dmlc {
-inline void InitLogging(const char* argv0) {
+inline void InitLogging(const char*) {
   // DO NOTHING
 }
 
@@ -87,12 +87,15 @@ class LogCheckError {
     dmlc::LogMessageFatal(__FILE__, __LINE__).stream()                \
       << "Check failed: " << #x " " #op " " #y << *(_check_err.str)
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 DEFINE_CHECK_FUNC(_LT, <)
 DEFINE_CHECK_FUNC(_GT, >)
 DEFINE_CHECK_FUNC(_LE, <=)
 DEFINE_CHECK_FUNC(_GE, >=)
 DEFINE_CHECK_FUNC(_EQ, ==)
 DEFINE_CHECK_FUNC(_NE, !=)
+#pragma GCC diagnostic pop
 
 // Always-on checking
 #define CHECK(x)                                           \
@@ -249,7 +252,7 @@ class LogMessageFatal : public LogMessage {
   LogMessageFatal(const char* file, int line) : LogMessage(file, line) {}
   ~LogMessageFatal() {
 #if DMLC_LOG_STACK_TRACE
-    const int MAX_STACK_SIZE = 256;
+    const int MAX_STACK_SIZE = 10;
     void *stack[MAX_STACK_SIZE];
 
     int nframes = backtrace(stack, MAX_STACK_SIZE);
@@ -280,7 +283,7 @@ class LogMessageFatal {
   std::ostringstream &stream() { return log_stream_; }
   ~LogMessageFatal() DMLC_THROW_EXCEPTION {
 #if DMLC_LOG_STACK_TRACE
-    const int MAX_STACK_SIZE = 256;
+    const int MAX_STACK_SIZE = 10;
     void *stack[MAX_STACK_SIZE];
 
     int nframes = backtrace(stack, MAX_STACK_SIZE);
